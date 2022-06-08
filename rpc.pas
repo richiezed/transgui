@@ -15,8 +15,19 @@
   You should have received a copy of the GNU General Public License
   along with Transmission Remote GUI; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
-*************************************************************************************}
 
+  In addition, as a special exception, the copyright holders give permission to 
+  link the code of portions of this program with the
+  OpenSSL library under certain conditions as described in each individual
+  source file, and distribute linked combinations including the two.
+
+  You must obey the GNU General Public License in all respects for all of the
+  code used other than OpenSSL.  If you modify file(s) with this exception, you
+  may extend this exception to your version of the file(s), but you are not
+  obligated to do so.  If you do not wish to do so, delete this exception
+  statement from your version.  If you delete this exception statement from all
+  source files in the program, then also delete it here.
+*************************************************************************************}
 unit rpc;
 
 {$mode objfpc}{$H+}
@@ -509,7 +520,7 @@ begin
                                     'maxConnectedPeers', 'nextAnnounceTime', 'dateCreated', 'creator', 'eta', 'peersSendingToUs',
                                     'seeders','peersGettingFromUs','leechers', 'uploadRatio', 'addedDate', 'doneDate',
                                     'activityDate', 'downloadLimited', 'uploadLimited', 'downloadDir', 'id', 'pieces',
-                                    'trackerStats', 'secondsDownloading', 'secondsSeeding', 'magnetLink', 'isPrivate']);
+                                    'trackerStats', 'secondsDownloading', 'secondsSeeding', 'magnetLink', 'isPrivate', 'labels']);
   try
     if args <> nil then begin
       t:=args.Arrays['torrents'];
@@ -803,23 +814,41 @@ end;
 function TRpc.RequestInfo(TorrentId: integer; const Fields: array of const; const ExtraFields: array of string): TJSONObject;
 var
   req, args: TJSONObject;
+  field_sorter: TStringList;
   _fields: TJSONArray;
   i: integer;
 begin
   Result:=nil;
-  req:=TJSONObject.Create;
-  try
-    req.Add('method', 'torrent-get');
-    args:=TJSONObject.Create;
-    if TorrentId <> 0 then
-      args.Add('ids', TJSONArray.Create([TorrentId]));
-    _fields:=TJSONArray.Create(Fields);
+  if Length(ExtraFields) > 0 then begin
+    // fix possible duplicates
+    field_sorter:=TStringList.Create;
+    field_sorter.Duplicates:=dupIgnore;
+    field_sorter.Sorted:=true;
+    field_sorter.CaseSensitive:=true;
+    for i:=Low(Fields) to High(Fields) do begin
+      Assert(Fields[i].VType = vtAnsiString); // must be so, as we use H+ directive
+      field_sorter.add(String(Fields[i].VAnsiString));
+    end;
     for i:=Low(ExtraFields) to High(ExtraFields) do
-      _fields.Add(ExtraFields[i]);
-    args.Add('fields', _fields);
-    req.Add('arguments', args);
+      field_sorter.add(ExtraFields[i]);
+    _fields:=TJSONArray.Create;
+    for i:=0 to field_sorter.Count-1 do
+      _fields.add(field_sorter[i]);
+    field_sorter.Free;
+  end else begin
+    _fields:=TJSONArray.Create(Fields);
+  end;
+  req:=TJSONObject.Create;
+  req.Add('method', 'torrent-get');
+  args:=TJSONObject.Create;
+  if TorrentId <> 0 then
+    args.Add('ids', TJSONArray.Create([TorrentId]));
+  args.Add('fields', _fields);
+  req.Add('arguments', args);
+  try
     Result:=SendRequest(req);
   finally
+    // req carries a full tree ob objects, that need to freed
     req.Free;
   end;
 end;
